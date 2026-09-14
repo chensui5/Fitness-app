@@ -18,12 +18,20 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // 签名密钥不入库（keystore/ 已被 .gitignore 排除）。
+    // 本机存在密钥时使用正式签名；他人 clone 后没有密钥，则回退到 debug 签名，
+    // 保证 assembleRelease 不会因找不到密钥文件而直接失败。
+    val releaseKeystore = rootProject.file("keystore/lianji.jks")
+    val hasReleaseKeystore = releaseKeystore.exists()
+
     signingConfigs {
-        create("release") {
-            storeFile = file("${rootDir}/keystore/lianji.jks")
-            storePassword = "lianji2026"
-            keyAlias = "lianji"
-            keyPassword = "lianji2026"
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = "lianji2026"
+                keyAlias = "lianji"
+                keyPassword = "lianji2026"
+            }
         }
     }
 
@@ -31,7 +39,12 @@ android {
         release {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                // 没有密钥库（例如他人 clone 后）——退回 debug 签名，保证能出包
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
