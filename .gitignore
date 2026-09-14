@@ -1,34 +1,75 @@
-# Gradle files
-.gradle/
+# ============================================================
+#  练迹 (LianJi) — Native Android / Kotlin / Jetpack Compose
+#  仓库只保留源码与构建配置，不保留任何产物、本地配置与密钥
+#  本文件为「自建规则」与「GitHub Android 模板」的并集
+# ============================================================
+
+# ---------- 构建产物 ----------
 build/
-
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
+*/build/
+out/
+release/
 captures/
 .externalNativeBuild/
 .cxx/
-*.aab
-*.apk
 output-metadata.json
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.hprof
 
-# IntelliJ
-*.iml
+# ---------- Gradle / Kotlin 缓存 ----------
+.gradle/
+android/.gradle/
+.kotlin/
+android/.kotlin/
+gradle-app.setting
+.gradletasknamecache
+
+# ---------- 本地环境配置（各机器路径不同）----------
+local.properties
+android/local.properties
+
+# ---------- 签名密钥：切勿上传，泄露即等于应用被他人冒名发布 ----------
+*.jks
+*.keystore
+*.p12
+*.p8
+keystore/
+signing.properties
+
+# ---------- 日志 ----------
+*.log
+
+# ---------- 第三方服务配置（含 API Key，按需放开）----------
+google-services.json
+
+# ---------- IDE / 编辑器 ----------
 .idea/
+*.iml
+*.ipr
+*.iws
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
+.vscode/
+.claude/
+.settings/
+.project
+.classpath
 
-# Keystore files
-*.jks
-*.keystore
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
 
-# Google Services (e.g. APIs or Firebase)
-google-services.json
+# ---------- 例外：wrapper 的 jar 必须进仓库，否则仓库无法构建 ----------
+!gradle/wrapper/gradle-wrapper.jar
 
-# Android Profiling
-*.hprof
+# ---------- 若日后迁移到 Flutter 项目，取消下面几行注释即可 ----------
+# .dart_tool/
+# .packages
+# .flutter-plugins
+# .flutter-plugins-dependencies
+# pubspec.lock

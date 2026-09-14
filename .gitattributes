@@ -1,0 +1,27 @@
+# ============================================================
+#  统一换行符策略 —— 防止跨平台构建失败
+# ============================================================
+# 说明：Windows 上的 Git 默认 core.autocrlf=true，会把仓库里的文本文件
+# 在检出时转成 CRLF。对 .kt / .xml 无害，但对 gradlew 是致命的：
+# gradlew 是 POSIX shell 脚本，带 CRLF 在 macOS/Linux 上会报
+#   ./gradlew: /bin/sh^M: bad interpreter: No such file or directory
+# 所以下面单独给它钉死 LF。
+# ============================================================
+
+# 让 Git 自行判断文本 / 二进制
+* text=auto
+
+# ---- 脚本：必须按平台固定换行符 ----
+gradlew    text eol=lf
+*.sh       text eol=lf
+*.bat      text eol=crlf
+
+# ---- 二进制文件：不做任何换行符转换 ----
+*.jar      binary
+*.apk      binary
+*.aab      binary
+*.jks      binary
+*.keystore binary
+*.png      binary
+*.jpg      binary
+*.webp     binary
