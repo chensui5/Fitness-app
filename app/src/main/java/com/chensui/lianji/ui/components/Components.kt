@@ -149,6 +149,58 @@ fun StatusChip(
     }
 }
 
+/** 单选芯片组：用于「只能选、不能填」的枚举值，如动作单位 */
+@Composable
+fun ChipSelector(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { option ->
+            val on = option == selected
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (enabled) Modifier.clickable { onSelect(option) } else Modifier
+                    ),
+                shape = RoundedCornerShape(9.dp),
+                color = when {
+                    !enabled -> MaterialTheme.colorScheme.surfaceVariant
+                    on -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.surfaceVariant
+                }
+            ) {
+                Box(
+                    modifier = Modifier.padding(vertical = 9.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = option,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = when {
+                            !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                            on -> MaterialTheme.colorScheme.onPrimaryContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 只允许正整数的输入过滤：剔除非数字字符。
+ * 0 会被保留在输入框中以便提示「必须大于 0」，但由调用方判定有效性。
+ */
+fun sanitizePositiveIntInput(raw: String, maxLength: Int = 3): String =
+    raw.filter { it.isDigit() }.take(maxLength)
+
 /** 空状态提示 */
 @Composable
 fun EmptyHint(text: String, modifier: Modifier = Modifier) {

@@ -191,6 +191,8 @@ object Store {
         restDay: Boolean,
         exercises: List<Exercise>
     ) = mutate { d ->
+        // 早于昨天的日期已成历史，不可再制定或修改
+        dateOf(weekKey, dayOfWeek)?.let { if (!canEditPlanOn(it)) return@mutate d }
         val base = d.plans[weekKey]?.days ?: (1..7).map { DayPlan(it) }
         val days = base.map { day ->
             if (day.dayOfWeek == dayOfWeek) {
@@ -215,6 +217,7 @@ object Store {
      * 该周所有已打卡的日期都会重新核算并回收金币（可能把余额扣成负数）。
      */
     fun clearWeek(weekKey: String) = mutate { d ->
+        if (!canEditWeek(weekKey)) return@mutate d      // 整周已成历史，不可清空
         var nd = d.copy(plans = d.plans - weekKey)
         Dates.parse(weekKey)?.let { monday ->
             for (i in 0 until 7) {
@@ -223,6 +226,33 @@ object Store {
         }
         reclaimOrphanOtherRewards(nd)
     }
+
+    /* ---------------- 计划编辑边界（禁止回填历史） ---------------- */
+
+    /**
+     * 计划可编辑的最早日期：昨天（含）。
+     * 更早的日期视为既成历史，不可再新增或修改计划，避免通过回填过去刷奖励。
+     */
+    fun planEditFloor(): LocalDate = Dates.now().minusDays(1)
+
+    /** 该日期是否还能制定 / 修改计划 */
+    fun canEditPlanOn(date: LocalDate): Boolean = !date.isBefore(planEditFloor())
+
+    /** 该周是否还有可编辑的日期（周级操作：延续、清空、新增其他训练） */
+    fun canEditWeek(weekKey: String): Boolean {
+        val monday = Dates.mondayOf(Dates.parse(weekKey) ?: return false)
+        return canEditPlanOn(monday.plusDays(6))
+    }
+
+    /** 该周内尚可编辑的星期几（1..7），用于限制日期选择范围 */
+    fun editableDaysIn(weekKey: String): List<Int> {
+        val monday = Dates.mondayOf(Dates.parse(weekKey) ?: return emptyList())
+        return (1..7).filter { canEditPlanOn(monday.plusDays((it - 1).toLong())) }
+    }
+
+    /** 某周某天对应的日期 */
+    fun dateOf(weekKey: String, dayOfWeek: Int): LocalDate? =
+        Dates.parse(weekKey)?.let { Dates.mondayOf(it).plusDays((dayOfWeek - 1).toLong()) }
 
     /** 复制同一周内某天的计划到其它几天 */
     fun copyDayPlan(weekKey: String, fromDay: Int, toDays: List<Int>) = mutate { d ->
@@ -245,6 +275,7 @@ object Store {
      * 动作会重新分配 id，避免与源周的完成记录互相干扰。
      */
     fun carryOverWeek(fromWeekKey: String, toWeekKey: String): Boolean {
+        if (!canEditWeek(toWeekKey)) return false       // 目标周已成历史，不允许回填
         val src = current.plans[fromWeekKey] ?: return false
         mutate { d ->
             val days = src.days.map { day ->

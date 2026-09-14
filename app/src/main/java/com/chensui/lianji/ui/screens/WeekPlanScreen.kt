@@ -47,12 +47,14 @@ import com.chensui.lianji.data.Exercise
 import com.chensui.lianji.data.OtherPlan
 import com.chensui.lianji.data.OtherType
 import com.chensui.lianji.data.Store
+import com.chensui.lianji.ui.components.ChipSelector
 import com.chensui.lianji.ui.components.CoinBadge
 import com.chensui.lianji.ui.components.EmptyHint
 import com.chensui.lianji.ui.components.SectionCard
 import com.chensui.lianji.ui.components.SectionTitle
 import com.chensui.lianji.ui.components.StatusChip
 import com.chensui.lianji.ui.components.ThinDivider
+import com.chensui.lianji.ui.components.sanitizePositiveIntInput
 import com.chensui.lianji.ui.theme.CoinGold
 import com.chensui.lianji.ui.theme.RestGray
 import com.chensui.lianji.ui.theme.WarnOrange
@@ -86,6 +88,11 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
     val canPrev = monday.isAfter(todayMonday.minusWeeks(8))
     val canNext = monday.isBefore(todayMonday.plusWeeks(8))
     val prevPlanKey = Store.latestPlanBefore(weekKey)
+
+    // 早于昨天的日期已成历史，不可再制定或修改计划（防止回填过去刷奖励）
+    val editableDays = Store.editableDaysIn(weekKey)
+    val canEditThisWeek = editableDays.isNotEmpty()
+    val weekFullyPast = !canEditThisWeek
 
     // 其他训练同样按周存储，这里只取当前查看周的安排
     val weekOthers = data.otherPlans
@@ -133,8 +140,18 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
             )
         }
 
+        /* ---------- 历史周提示 ---------- */
+        if (weekFullyPast) {
+            item {
+                InfoBanner(
+                    "这是历史计划，不可再新增或修改。只有昨天及以后的日期才能制定计划，已产生的打卡记录不受影响。",
+                    RestGray
+                )
+            }
+        }
+
         /* ---------- 该周尚未制定计划 ---------- */
-        if (stored == null) {
+        if (stored == null && canEditThisWeek) {
             item {
                 EmptyWeekCard(
                     canCarry = prevPlanKey != null,
@@ -153,12 +170,13 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
                 plan = day,
                 scheduled = stored != null,
                 isToday = date == Dates.now(),
+                editable = dow in editableDays,
                 onEdit = { editingDay = dow }
             )
         }
 
         /* ---------- 清空本周 ---------- */
-        if (stored != null) {
+        if (stored != null && canEditThisWeek) {
             item {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { confirmClear = true }) {
@@ -188,7 +206,13 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
                 } else {
                     weekOthers.forEach { p ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (canEditThisWeek) Modifier.clickable { editingOther = p }
+                                    else Modifier
+                                )
+                                .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             StatusChip(
@@ -208,8 +232,10 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            TextButton(onClick = { Store.deleteOtherPlan(p.id) }) {
-                                Text("删除", color = WarnOrange, style = MaterialTheme.typography.labelMedium)
+                            if (canEditThisWeek) {
+                                TextButton(onClick = { Store.deleteOtherPlan(p.id) }) {
+                                    Text("删除", color = WarnOrange, style = MaterialTheme.typography.labelMedium)
+                                }
                             }
                         }
                         ThinDivider()
@@ -217,10 +243,18 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
                 }
 
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { editingOther = "new" }) {
-                        Text("+ 添加训练计划", color = MaterialTheme.colorScheme.primary)
+                if (canEditThisWeek) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { editingOther = "new" }) {
+                            Text("+ 添加训练计划", color = MaterialTheme.colorScheme.primary)
+                        }
                     }
+                } else {
+                    Text(
+                        "历史计划，不可新增或修改",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -327,6 +361,7 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
             types = data.otherTypes,
             initial = target as? OtherPlan,
             weekKey = weekKey,
+            allowedDays = editableDays,
             onDismiss = { editingOther = null },
             onSave = { plan ->
                 Store.saveOtherPlan(plan)
@@ -518,9 +553,10 @@ private fun DayPlanCard(
     plan: DayPlan,
     scheduled: Boolean,
     isToday: Boolean,
+    editable: Boolean,
     onEdit: () -> Unit
 ) {
-    SectionCard(onClick = onEdit) {
+    SectionCard(onClick = if (editable) onEdit else null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = Dates.weekLabel(plan.dayOfWeek),
@@ -536,6 +572,10 @@ private fun DayPlanCard(
             if (isToday) {
                 Spacer(Modifier.width(8.dp))
                 StatusChip("今天", MaterialTheme.colorScheme.primary)
+            }
+            if (!editable) {
+                Spacer(Modifier.width(8.dp))
+                StatusChip("已过", RestGray)
             }
             Spacer(Modifier.weight(1f))
             when {
@@ -572,7 +612,7 @@ private fun DayPlanCard(
                     )
                 }
             }
-        } else if (!scheduled || (!plan.isRestDay && plan.exercises.isEmpty())) {
+        } else if (editable && (!scheduled || (!plan.isRestDay && plan.exercises.isEmpty()))) {
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "点击添加动作",
@@ -597,6 +637,7 @@ private fun DayPlanEditorDialog(
         mutableStateListOf<Exercise>().also { it.addAll(initial.exercises) }
     }
     var adding by remember { mutableStateOf(false) }
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -647,9 +688,18 @@ private fun DayPlanEditorDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
+                        Text(
+                            "点一下动作即可修改，不必删除后重加",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
                         rows.forEachIndexed { index, ex ->
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { editingIndex = index }
+                                    .padding(vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
@@ -660,6 +710,12 @@ private fun DayPlanEditorDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                Text(
+                                    "修改 ›",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(4.dp))
                                 TextButton(onClick = { rows.removeAt(index) }) {
                                     Text("移除", color = WarnOrange, style = MaterialTheme.typography.labelMedium)
                                 }
@@ -696,19 +752,48 @@ private fun DayPlanEditorDialog(
             }
         )
     }
+
+    editingIndex?.let { idx ->
+        ExerciseEditorDialog(
+            initial = rows.getOrNull(idx),
+            onDismiss = { editingIndex = null },
+            onSave = { ex ->
+                if (idx in rows.indices) rows[idx] = ex
+                editingIndex = null
+            }
+        )
+    }
+}
+
+/** 动作「每组数量」的可选单位 —— 只能从这里选，不允许自由输入或删除 */
+private val REP_UNITS = listOf("次", "秒", "分钟")
+
+/** 解析已存的动作描述（形如 "10 次"）；无法解析时回落到 12 次 */
+private fun parseReps(raw: String): Pair<Int, String> {
+    val m = Regex("""^\s*(\d+)\s*(\S*)\s*$""").find(raw) ?: return 12 to "次"
+    val value = m.groupValues[1].toIntOrNull() ?: 12
+    val unit = m.groupValues[2].takeIf { it in REP_UNITS } ?: "次"
+    return value to unit
 }
 
 @Composable
 private fun ExerciseEditorDialog(
+    initial: Exercise? = null,
     onDismiss: () -> Unit,
     onSave: (Exercise) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var sets by remember { mutableStateOf("4") }
-    var reps by remember { mutableStateOf("10 次") }
-    var note by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var sets by remember { mutableStateOf((initial?.sets ?: 4).toString()) }
+    val parsed = remember { parseReps(initial?.reps ?: "") }
+    var unit by remember { mutableStateOf(parsed.second) }
+    var qty by remember { mutableStateOf(parsed.first.toString()) }
+    var note by remember { mutableStateOf(initial?.note ?: "") }
 
-    val valid = name.isNotBlank()
+    val setsValue = sets.toIntOrNull() ?: 0
+    val qtyValue = qty.toIntOrNull() ?: 0
+    val setsOk = setsValue > 0
+    val qtyOk = qtyValue > 0
+    val valid = name.isNotBlank() && setsOk && qtyOk
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -717,7 +802,10 @@ private fun ExerciseEditorDialog(
             color = MaterialTheme.colorScheme.surface
         ) {
             Column(Modifier.padding(18.dp)) {
-                Text("添加动作", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (initial == null) "添加动作" else "修改动作",
+                    style = MaterialTheme.typography.titleLarge
+                )
 
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -725,19 +813,52 @@ private fun ExerciseEditorDialog(
                     modifier = Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text("动作名称，如：卧推") }
                 )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = sets,
-                        onValueChange = { sets = it.filter { c -> c.isDigit() } },
-                        modifier = Modifier.weight(1f), singleLine = true,
-                        label = { Text("组数") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = sets,
+                    onValueChange = { sets = sanitizePositiveIntInput(it) },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("组数（只填数字）") },
+                    isError = !setsOk,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                if (!setsOk) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "组数需为大于 0 的整数",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = WarnOrange
                     )
-                    OutlinedTextField(
-                        value = reps, onValueChange = { reps = it },
-                        modifier = Modifier.weight(1f), singleLine = true,
-                        label = { Text("次数，如 10 次") }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "每组数量",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                ChipSelector(
+                    options = REP_UNITS,
+                    selected = unit,
+                    onSelect = { unit = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = qty,
+                    onValueChange = { qty = sanitizePositiveIntInput(it) },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("数量（只填数字）") },
+                    isError = !qtyOk,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                if (!qtyOk) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "数量需为大于 0 的整数",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = WarnOrange
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -749,7 +870,7 @@ private fun ExerciseEditorDialog(
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "提示：次数可填「力竭」「8-12 次」等描述",
+                    "单位只能从上面选择；习惯说「力竭」的，请写在备注里。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -764,17 +885,17 @@ private fun ExerciseEditorDialog(
                         onClick = {
                             onSave(
                                 Exercise(
-                                    id = UUID.randomUUID().toString(),
+                                    id = initial?.id ?: UUID.randomUUID().toString(),
                                     name = name.trim(),
-                                    sets = sets.toIntOrNull() ?: 3,
-                                    reps = reps.ifBlank { "10 次" },
+                                    sets = setsValue,
+                                    reps = "$qtyValue $unit",
                                     note = note.trim()
                                 )
                             )
                         }
                     ) {
                         Text(
-                            "添加",
+                            if (initial == null) "添加" else "保存",
                             color = if (valid) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.SemiBold
@@ -793,6 +914,7 @@ private fun OtherPlanEditorDialog(
     types: List<OtherType>,
     initial: OtherPlan?,
     weekKey: String,
+    allowedDays: List<Int>,
     onDismiss: () -> Unit,
     onSave: (OtherPlan) -> Unit
 ) {
@@ -862,23 +984,35 @@ private fun OtherPlanEditorDialog(
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     (1..7).forEach { d ->
+                        val allowed = d in allowedDays
                         Surface(
-                            modifier = Modifier.weight(1f).clickable { dow = d },
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(if (allowed) Modifier.clickable { dow = d } else Modifier),
                             shape = RoundedCornerShape(8.dp),
-                            color = if (d == dow) MaterialTheme.colorScheme.primaryContainer
+                            color = if (d == dow && allowed) MaterialTheme.colorScheme.primaryContainer
                             else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Box(Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                                 Text(
                                     text = Dates.weekLabel(d).removePrefix("周"),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = if (d == dow) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = when {
+                                        !allowed -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                        d == dow -> MaterialTheme.colorScheme.onPrimaryContainer
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             }
                         }
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "浅色的日期已成历史，不可再安排计划",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
