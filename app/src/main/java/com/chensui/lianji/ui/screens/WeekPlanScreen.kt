@@ -192,7 +192,7 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
                             text = "延续上周计划",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium,
-                            color = if (prevPlanKey != null) WarnOrange
+                            color = if (prevPlanKey != null) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
