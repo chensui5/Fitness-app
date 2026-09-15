@@ -2,12 +2,14 @@ package com.chensui.lianji.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,11 +37,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chensui.lianji.data.Dates
 import com.chensui.lianji.data.DayPlan
@@ -60,6 +68,7 @@ import com.chensui.lianji.ui.theme.RestGray
 import com.chensui.lianji.ui.theme.WarnOrange
 import java.time.LocalDate
 import java.util.UUID
+import kotlin.math.roundToInt
 
 @Composable
 fun WeekPlanScreen(modifier: Modifier = Modifier) {
@@ -665,6 +674,24 @@ private fun DayPlanCard(
 
 /* ==================== 单日计划编辑 ==================== */
 
+/** 拖动排序手柄：三条横线 */
+@Composable
+private fun DragHandle(active: Boolean) {
+    val color = if (active) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        repeat(3) {
+            Box(
+                modifier = Modifier
+                    .width(15.dp)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color)
+            )
+        }
+    }
+}
+
 @Composable
 private fun DayPlanEditorDialog(
     dayOfWeek: Int,
@@ -678,6 +705,26 @@ private fun DayPlanEditorDialog(
     }
     var adding by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
+
+    /* ---- 拖动排序：长按手柄后接管手势，避免和弹窗滚动打架 ---- */
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+    val rowHeight = 56.dp
+    val rowHeightPx = with(density) { rowHeight.toPx() }
+    var dragFrom by remember { mutableStateOf(-1) }
+    var dragDelta by remember { mutableStateOf(0f) }
+    // 手指每拖过一格，目标位置就换一格
+    val dragTo = if (dragFrom < 0 || rows.isEmpty()) -1
+    else (dragFrom + (dragDelta / rowHeightPx).roundToInt()).coerceIn(0, rows.lastIndex)
+
+    fun finishDrag(commit: Boolean) {
+        if (commit && dragFrom >= 0 && dragTo >= 0 && dragFrom != dragTo) {
+            val moved = rows.removeAt(dragFrom)
+            rows.add(dragTo, moved)
+        }
+        dragFrom = -1
+        dragDelta = 0f
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -729,38 +776,77 @@ private fun DayPlanEditorDialog(
                         )
                     } else {
                         Text(
-                            "点一下动作即可修改，不必删除后重加",
+                            "点一下动作即可修改；长按左侧三横线可上下拖动排序",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(6.dp))
                         rows.forEachIndexed { index, ex ->
-                            Row(
+                            val dragging = dragFrom == index
+                            // 被拖的那一行跟手，其余行让位
+                            val shift = when {
+                                dragFrom < 0 -> 0f
+                                dragging -> dragDelta
+                                dragFrom < dragTo && index in (dragFrom + 1)..dragTo -> -rowHeightPx
+                                dragFrom > dragTo && index in dragTo until dragFrom -> rowHeightPx
+                                else -> 0f
+                            }
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { editingIndex = index }
-                                    .padding(vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .height(rowHeight)
+                                    .zIndex(if (dragging) 1f else 0f)
+                                    .graphicsLayer { translationY = shift }
                             ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(ex.name, style = MaterialTheme.typography.bodyMedium)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable { editingIndex = index },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(38.dp)
+                                            .fillMaxHeight()
+                                            .pointerInput(index, rows.size) {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = {
+                                                        dragFrom = index
+                                                        dragDelta = 0f
+                                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    },
+                                                    onDrag = { change, amount ->
+                                                        change.consume()
+                                                        dragDelta += amount.y
+                                                    },
+                                                    onDragEnd = { finishDrag(true) },
+                                                    onDragCancel = { finishDrag(false) }
+                                                )
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        DragHandle(active = dragging)
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(ex.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "${ex.sets} 组 × ${ex.reps}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                     Text(
-                                        "${ex.sets} 组 × ${ex.reps}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        "修改 ›",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
+                                    Spacer(Modifier.width(4.dp))
+                                    TextButton(onClick = { rows.removeAt(index) }) {
+                                        Text("移除", color = WarnOrange, style = MaterialTheme.typography.labelMedium)
+                                    }
                                 }
-                                Text(
-                                    "修改 ›",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                TextButton(onClick = { rows.removeAt(index) }) {
-                                    Text("移除", color = WarnOrange, style = MaterialTheme.typography.labelMedium)
-                                }
+                                ThinDivider(modifier = Modifier.align(Alignment.BottomStart))
                             }
-                            ThinDivider()
                         }
                     }
 
