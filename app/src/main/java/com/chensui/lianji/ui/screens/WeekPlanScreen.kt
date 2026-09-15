@@ -72,6 +72,7 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
     var editingWorkoutCoin by remember { mutableStateOf(false) }
     var otherTypeDialog by remember { mutableStateOf<OtherType?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmCarry by remember { mutableStateOf(false) }
 
     val stored = data.plans[weekKey]
     val todayMonday = Dates.mondayOf(Dates.now())
@@ -155,7 +156,7 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
             item {
                 EmptyWeekCard(
                     canCarry = prevPlanKey != null,
-                    onCarry = { prevPlanKey?.let { Store.carryOverWeek(it, weekKey) } }
+                    onCarry = { confirmCarry = true }
                 )
             }
         }
@@ -175,12 +176,34 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        /* ---------- 清空本周 ---------- */
+        /* ---------- 周级操作：延续 / 清空（同一排、同一套样式） ---------- */
         if (stored != null && canEditThisWeek) {
             item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        enabled = prevPlanKey != null,
+                        onClick = { confirmCarry = true }
+                    ) {
+                        Text(
+                            text = "延续上周计划",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = if (prevPlanKey != null) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(2.dp))
                     TextButton(onClick = { confirmClear = true }) {
-                        Text("清空这一周的计划", color = WarnOrange, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            text = "清空这一周的计划",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -407,14 +430,31 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
 
     if (confirmClear) {
         ConfirmDialog(
-            title = "清空这一周",
-            message = "将删除 $weekKey 这一周的全部安排，已经产生的打卡记录不会受影响。",
+            title = "清空这一周的计划",
+            message = "将删除这一周的全部安排。该周已完成的打卡会一并撤销，已发放的金币将被扣回（可能把余额扣成负数）。",
             confirmText = "清空",
             danger = true,
             onDismiss = { confirmClear = false },
             onConfirm = {
                 Store.clearWeek(weekKey)
                 confirmClear = false
+            }
+        )
+    }
+
+    if (confirmCarry) {
+        ConfirmDialog(
+            title = "延续上周计划",
+            message = if (stored == null) {
+                "将把最近一次制定过计划的那一周的安排，整套复制到这一周（动作会重新生成）。"
+            } else {
+                "将用最近一次制定过计划的那一周的安排，覆盖这一周现有的安排。该周已完成的打卡会一并撤销，已发放的金币将被扣回（可能把余额扣成负数）。"
+            },
+            confirmText = "延续",
+            onDismiss = { confirmCarry = false },
+            onConfirm = {
+                prevPlanKey?.let { Store.carryOverWeek(it, weekKey) }
+                confirmCarry = false
             }
         )
     }
