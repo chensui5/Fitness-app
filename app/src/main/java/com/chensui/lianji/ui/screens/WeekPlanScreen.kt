@@ -55,6 +55,7 @@ import com.chensui.lianji.data.Exercise
 import com.chensui.lianji.data.OtherPlan
 import com.chensui.lianji.data.OtherType
 import com.chensui.lianji.data.Store
+import com.chensui.lianji.data.setsRepsLabel
 import com.chensui.lianji.ui.components.ChipSelector
 import com.chensui.lianji.ui.components.CoinBadge
 import com.chensui.lianji.ui.components.EmptyHint
@@ -82,6 +83,8 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
     var otherTypeDialog by remember { mutableStateOf<OtherType?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmCarry by remember { mutableStateOf(false) }
+    var importPasteOpen by remember { mutableStateOf(false) }
+    var importText by remember { mutableStateOf<String?>(null) }
 
     val stored = data.plans[weekKey]
     val todayMonday = Dates.mondayOf(Dates.now())
@@ -185,17 +188,33 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        /* ---------- 周级操作：延续 / 清空（同一排、同一套样式） ---------- */
-        if (stored != null && canEditThisWeek) {
+        /* ---------- 周级操作：导入 / 延续 / 清空（同一排、同一套样式） ---------- */
+        if (canEditThisWeek) {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 三颗按钮文案较长，压缩内边距以保证能并排放得下
+                    val compact = PaddingValues(horizontal = 8.dp)
+
+                    TextButton(
+                        onClick = { importPasteOpen = true },
+                        contentPadding = compact
+                    ) {
+                        Text(
+                            text = "导入",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.width(2.dp))
                     TextButton(
                         enabled = prevPlanKey != null,
-                        onClick = { confirmCarry = true }
+                        onClick = { confirmCarry = true },
+                        contentPadding = compact
                     ) {
                         Text(
                             text = "延续上周计划",
@@ -205,14 +224,19 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(Modifier.width(2.dp))
-                    TextButton(onClick = { confirmClear = true }) {
-                        Text(
-                            text = "清空这一周的计划",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = WarnOrange
-                        )
+                    if (stored != null) {
+                        Spacer(Modifier.width(2.dp))
+                        TextButton(
+                            onClick = { confirmClear = true },
+                            contentPadding = compact
+                        ) {
+                            Text(
+                                text = "清空这一周的计划",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = WarnOrange
+                            )
+                        }
                     }
                 }
             }
@@ -467,6 +491,24 @@ fun WeekPlanScreen(modifier: Modifier = Modifier) {
             }
         )
     }
+
+    /* ---------- 从文本导入计划 ---------- */
+    if (importPasteOpen) {
+        PlanPasteDialog(
+            onDismiss = { importPasteOpen = false },
+            onParsed = { text ->
+                importPasteOpen = false
+                importText = text
+            }
+        )
+    }
+
+    importText?.let { text ->
+        PlanImportPreviewDialog(
+            sourceText = text,
+            onDismiss = { importText = null }
+        )
+    }
 }
 
 private fun fmtNum(v: Double): String =
@@ -655,7 +697,7 @@ private fun DayPlanCard(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "${ex.sets} 组 × ${ex.reps}",
+                        text = ex.setsRepsLabel(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -830,7 +872,7 @@ private fun DayPlanEditorDialog(
                                     Column(Modifier.weight(1f)) {
                                         Text(ex.name, style = MaterialTheme.typography.bodyMedium)
                                         Text(
-                                            "${ex.sets} 组 × ${ex.reps}",
+                                            ex.setsRepsLabel(),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -903,7 +945,7 @@ private fun parseReps(raw: String): Pair<Int, String> {
 }
 
 @Composable
-private fun ExerciseEditorDialog(
+internal fun ExerciseEditorDialog(
     initial: Exercise? = null,
     onDismiss: () -> Unit,
     onSave: (Exercise) -> Unit
@@ -912,13 +954,19 @@ private fun ExerciseEditorDialog(
     var sets by remember { mutableStateOf((initial?.sets ?: 4).toString()) }
     val parsed = remember { parseReps(initial?.reps ?: "") }
     var unit by remember { mutableStateOf(parsed.second) }
-    var qty by remember { mutableStateOf(parsed.first.toString()) }
+    // 空串表示「数量未指定」：从粘贴文本导入区间（如 8-12 次）时会留空，
+    // 用户既可以保持空着，也可以随时补填
+    var qty by remember {
+        mutableStateOf(if (initial?.reps.isNullOrBlank()) "" else parsed.first.toString())
+    }
     var note by remember { mutableStateOf(initial?.note ?: "") }
 
     val setsValue = sets.toIntOrNull() ?: 0
-    val qtyValue = qty.toIntOrNull() ?: 0
     val setsOk = setsValue > 0
-    val qtyOk = qtyValue > 0
+    val qtyBlank = qty.isBlank()
+    val qtyValue = qty.toIntOrNull() ?: 0
+    // 允许留空；但只要填了，就必须是大于 0 的整数
+    val qtyOk = qtyBlank || qtyValue > 0
     val valid = name.isNotBlank() && setsOk && qtyOk
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -986,6 +1034,13 @@ private fun ExerciseEditorDialog(
                         style = MaterialTheme.typography.labelSmall,
                         color = WarnOrange
                     )
+                } else if (qtyBlank) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "留空表示数量未指定，之后随时可补",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -1014,7 +1069,7 @@ private fun ExerciseEditorDialog(
                                     id = initial?.id ?: UUID.randomUUID().toString(),
                                     name = name.trim(),
                                     sets = setsValue,
-                                    reps = "$qtyValue $unit",
+                                    reps = if (qtyBlank) "" else "$qtyValue $unit",
                                     note = note.trim()
                                 )
                             )

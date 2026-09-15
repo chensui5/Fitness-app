@@ -1,5 +1,8 @@
 package com.chensui.lianji
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,8 +19,11 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -27,10 +33,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chensui.lianji.data.Store
+import com.chensui.lianji.data.UpdateChecker
+import com.chensui.lianji.ui.screens.ConfirmDialog
 import com.chensui.lianji.ui.screens.DailyScreen
 import com.chensui.lianji.ui.screens.DietScreen
 import com.chensui.lianji.ui.screens.ProfileScreen
@@ -58,6 +67,20 @@ private val TAB_LABELS = listOf("今日", "饮食", "计划", "商店", "我的"
 @Composable
 private fun AppRoot() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val data by Store.data.collectAsStateWithLifecycle()
+
+    // 进入软件时静默检查一次更新。
+    // 只有「确实有新版本」才提示；已是最新、没联网、请求失败一律保持安静，绝不打扰。
+    var pendingUpdate by remember { mutableStateOf<UpdateChecker.UpdateResult.Newer?>(null) }
+
+    LaunchedEffect(Unit) {
+        if (!UpdateChecker.isNetworkAvailable(context)) return@LaunchedEffect
+        val r = UpdateChecker.check(BuildConfig.VERSION_NAME)
+        if (r is UpdateChecker.UpdateResult.Newer && r.version != data.ignoredUpdateVersion) {
+            pendingUpdate = r
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -85,6 +108,37 @@ private fun AppRoot() {
                 else -> ProfileScreen()
             }
         }
+    }
+
+    pendingUpdate?.let { r ->
+        ConfirmDialog(
+            title = "发现新版本 ${r.version}",
+            message = buildString {
+                append("当前版本 v${BuildConfig.VERSION_NAME}")
+                if (r.notes.isNotBlank()) append("\n\n${r.notes}")
+            },
+            confirmText = "更新",
+            dismissText = "忽略此次更新",
+            onDismiss = {
+                // 记住这一版，之后不再重复打扰；出了更新的版本仍会提示
+                Store.ignoreUpdateVersion(r.version)
+                pendingUpdate = null
+            },
+            onConfirm = {
+                pendingUpdate = null
+                openUrl(context, r.url)
+            }
+        )
+    }
+}
+
+/** 用系统浏览器打开链接；没有可用浏览器时静默忽略，不闪退 */
+private fun openUrl(context: Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
 

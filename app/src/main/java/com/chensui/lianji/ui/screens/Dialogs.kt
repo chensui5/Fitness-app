@@ -58,6 +58,7 @@ private fun SheetShell(
     onDismiss: () -> Unit,
     onConfirm: (() -> Unit)? = null,
     confirmText: String = "确定",
+    dismissText: String = "取消",
     confirmEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -83,7 +84,7 @@ private fun SheetShell(
                 Spacer(Modifier.height(10.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) {
-                        Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(dismissText, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (onConfirm != null) {
                         TextButton(onClick = onConfirm, enabled = confirmEnabled) {
@@ -599,13 +600,17 @@ fun ConfirmDialog(
     confirmText: String = "确定",
     danger: Boolean = false,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    // 左侧按钮文案。默认「取消」；更新提示里用「忽略此次更新」。
+    // 放在末尾是为了不影响已有的命名参数调用。
+    dismissText: String = "取消"
 ) {
     SheetShell(
         title = title,
         onDismiss = onDismiss,
         onConfirm = onConfirm,
-        confirmText = confirmText
+        confirmText = confirmText,
+        dismissText = dismissText
     ) {
         Text(
             text = message,

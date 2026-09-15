@@ -49,6 +49,14 @@ data class Exercise(
     val note: String = ""
 )
 
+/**
+ * 组次展示文案。
+ * [Exercise.reps] 为空表示「数量未指定」—— 从粘贴文本导入区间（如 8-12 次）时故意留空，
+ * 由用户在预览里补填；此时只显示组数，不显示一个猜出来的假数字。
+ */
+fun Exercise.setsRepsLabel(): String =
+    if (reps.isBlank()) "$sets 组" else "$sets 组 × $reps"
+
 /** 一周中某一天的计划 */
 @Serializable
 data class DayPlan(
@@ -202,7 +210,9 @@ data class AppData(
     val customFoods: List<FoodItem> = emptyList(),
     val themeMode: Int = 0,       // 0 跟随系统 / 1 浅色 / 2 深色
     val soundEnabled: Boolean = true,
-    val hapticEnabled: Boolean = true
+    val hapticEnabled: Boolean = true,
+    // 「忽略此次更新」跳过的版本号。只对这一版生效，出了更早的版本仍会提示。
+    val ignoredUpdateVersion: String = ""
 )
 
 object Defaults {

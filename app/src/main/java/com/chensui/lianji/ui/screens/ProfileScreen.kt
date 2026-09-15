@@ -1,6 +1,8 @@
 package com.chensui.lianji.ui.screens
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -36,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +57,7 @@ import com.chensui.lianji.BuildConfig
 import com.chensui.lianji.data.BodyRecord
 import com.chensui.lianji.data.Dates
 import com.chensui.lianji.data.Store
+import com.chensui.lianji.data.UpdateChecker
 import com.chensui.lianji.data.UserProfile
 import com.chensui.lianji.ui.components.CoinBadge
 import com.chensui.lianji.ui.components.EmptyHint
@@ -69,6 +73,7 @@ import com.chensui.lianji.ui.theme.DoneGreen
 import com.chensui.lianji.ui.theme.RestGray
 import com.chensui.lianji.ui.theme.WarnOrange
 import com.chensui.lianji.ui.theme.doneColor
+import kotlinx.coroutines.launch
 import java.time.YearMonth
 
 @Composable
@@ -82,6 +87,11 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
     var calendarOpen by remember { mutableStateOf(false) }
     var coinLogOpen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    /* ---------- 检查更新（手动触发，平时不联网） ---------- */
+    val scope = rememberCoroutineScope()
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<UpdateChecker.UpdateResult?>(null) }
 
     val now = Dates.now()
     val thisMonth = YearMonth.from(now)
@@ -230,13 +240,24 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
         /* ---------- 身体数据 ---------- */
         item {
             SectionCard {
+                val monthKey = thisMonth.toString()
+                val editable = Store.canEditMonth(monthKey)
+                val firstTime = Store.isFirstBodyRecord(monthKey)
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("身体数据", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.weight(1f))
-                    val editable = Store.canEditMonth(thisMonth.toString())
-                    TextButton(onClick = { bodyEditor = true }) {
+                    // 未到窗口时必须真的禁用，只改文字颜色是拦不住的
+                    TextButton(
+                        enabled = editable,
+                        onClick = { bodyEditor = true }
+                    ) {
                         Text(
-                            text = if (editable) "修改" else "未到修改期",
+                            text = when {
+                                !editable -> "未到修改期"
+                                firstTime -> "填写"
+                                else -> "修改"
+                            },
                             style = MaterialTheme.typography.labelMedium,
                             color = if (editable) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
@@ -244,7 +265,14 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
-                if (Store.isInReminderWindow()) {
+                if (!editable) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "每月最后三天与次月可修改当月数据",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (Store.isInReminderWindow()) {
                     Spacer(Modifier.height(6.dp))
                     InfoBanner("月底啦，记得更新这个月的身体数据", WarnOrange)
                 }
@@ -393,7 +421,35 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
                 }
 
                 ThinDivider()
-                SettingRow("版本号", "v${BuildConfig.VERSION_NAME}")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !checkingUpdate) {
+                            checkingUpdate = true
+                            updateResult = null
+                            scope.launch {
+                                updateResult = UpdateChecker.check(BuildConfig.VERSION_NAME)
+                                checkingUpdate = false
+                            }
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("检查更新", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "当前版本 v${BuildConfig.VERSION_NAME}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = if (checkingUpdate) "检查中…" else "检查",
+                        color = if (checkingUpdate) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
 
                 ThinDivider()
                 Row(
@@ -497,6 +553,44 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
         CoinLogDialog(onDismiss = { coinLogOpen = false })
     }
 
+    updateResult?.let { r ->
+        when (r) {
+            is UpdateChecker.UpdateResult.Newer -> ConfirmDialog(
+                title = "发现新版本 ${r.version}",
+                message = buildString {
+                    append("当前版本 v${BuildConfig.VERSION_NAME}")
+                    if (r.notes.isNotBlank()) append("\n\n${r.notes}")
+                },
+                confirmText = "前往更新",
+                onDismiss = { updateResult = null },
+                onConfirm = {
+                    updateResult = null
+                    openUrl(context, r.url)
+                }
+            )
+
+            is UpdateChecker.UpdateResult.Latest -> ConfirmDialog(
+                title = "已是最新版本",
+                message = "当前 v${r.version} 已经是发布版中最新的一个，不用更新。",
+                confirmText = "好",
+                onDismiss = { updateResult = null },
+                onConfirm = { updateResult = null }
+            )
+
+            is UpdateChecker.UpdateResult.Failed -> ConfirmDialog(
+                title = "检查失败",
+                message = "${r.reason}。\n\n可能是网络不通，或 GitHub 访问受限。" +
+                    "你仍然可以手动打开下载页看看。",
+                confirmText = "打开下载页",
+                onDismiss = { updateResult = null },
+                onConfirm = {
+                    updateResult = null
+                    openUrl(context, UpdateChecker.DOWNLOAD_PAGE)
+                }
+            )
+        }
+    }
+
     message?.let { msg ->
         ConfirmDialog(
             title = "提示",
@@ -509,6 +603,16 @@ fun ProfileScreen(modifier: Modifier = Modifier) {
 }
 
 /* ==================== 小工具 ==================== */
+
+/** 用系统浏览器打开链接；没有可用浏览器时静默忽略，不闪退 */
+private fun openUrl(context: Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
 
 private fun fmt1(v: Double): String =
     if (v == v.toLong().toDouble()) v.toLong().toString() else String.format("%.1f", v)
@@ -611,7 +715,7 @@ private fun BodyEditorDialog(
                 Text("$month 身体数据", style = MaterialTheme.typography.titleLarge)
 
                 Spacer(Modifier.height(10.dp))
-                InfoBanner("仅在每月最后三天与次月可修改；历史记录只能查看，不能改动", WarnOrange)
+                InfoBanner("每月最后三天与次月可修改当月数据；历史记录只能查看，不能改动", WarnOrange)
 
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

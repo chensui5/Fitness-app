@@ -55,6 +55,7 @@ import com.chensui.lianji.data.Exercise
 import com.chensui.lianji.data.OtherDone
 import com.chensui.lianji.data.OtherPlan
 import com.chensui.lianji.data.Store
+import com.chensui.lianji.data.setsRepsLabel
 import com.chensui.lianji.ui.SoundFx
 import com.chensui.lianji.ui.components.CoinBadge
 import com.chensui.lianji.ui.components.EmptyHint
@@ -457,7 +458,7 @@ private fun ExerciseRow(
             }
 
             Text(
-                text = "${exercise.sets} 组 × ${exercise.reps}",
+                text = exercise.setsRepsLabel(),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (done) accent.copy(alpha = 0.8f)
                 else MaterialTheme.colorScheme.onSurfaceVariant

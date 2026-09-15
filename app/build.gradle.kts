@@ -13,8 +13,8 @@ android {
         applicationId = "com.chensui.lianji"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.4.4"
+        versionCode = 12
+        versionName = "1.4.7"
         vectorDrawables { useSupportLibrary = true }
     }
 

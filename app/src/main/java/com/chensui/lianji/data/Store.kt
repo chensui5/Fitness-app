@@ -160,6 +160,9 @@ object Store {
 
     fun setHapticEnabled(on: Boolean) = mutate { it.copy(hapticEnabled = on) }
 
+    /** 记住用户点过「忽略此次更新」的版本，同一版本不再弹提示 */
+    fun ignoreUpdateVersion(version: String) = mutate { it.copy(ignoredUpdateVersion = version) }
+
     /* ---------------- 金币 ---------------- */
 
     fun addCoins(amount: Int, reason: String) = mutate { d ->
@@ -651,7 +654,20 @@ object Store {
         return set
     }
 
-    fun canEditMonth(month: String): Boolean = month in editableMonths()
+    /**
+     * 该月份的身体数据是否可编辑。
+     * 规则：每月最后三天 + 次月（即上个月）可改当月数据。
+     * 例外：**从未记录过任何数据时，当月随时可建立第一条** ——
+     * 否则新用户得干等到月底才能填身高体重。
+     */
+    fun canEditMonth(month: String): Boolean {
+        if (isFirstBodyRecord(month)) return true
+        return month in editableMonths()
+    }
+
+    /** 是否属于「首次填写」（用于按钮文案区分「填写 / 修改」） */
+    fun isFirstBodyRecord(month: String): Boolean =
+        current.bodyRecords.isEmpty() && month == YearMonth.from(Dates.now()).toString()
 
     fun isInReminderWindow(): Boolean {
         val today = Dates.now()
@@ -679,6 +695,8 @@ object Store {
     }
 
     fun saveBodyRecord(record: BodyRecord) = mutate { d ->
+        // 兜底：不在可编辑窗口内直接拒绝写入（界面已拦，这里防止其它调用路径绕过）
+        if (!canEditMonth(record.month)) return@mutate d
         val exists = d.bodyRecords.any { it.month == record.month }
         val list = if (exists) d.bodyRecords.map { if (it.month == record.month) record else it }
         else (d.bodyRecords + record).sortedBy { it.month }
