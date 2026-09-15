@@ -80,7 +80,16 @@ private fun SheetShell(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(12.dp))
-                content()
+                // 内容区限高并可滚动。消息一长（比如更新说明）就会把底部按钮顶出屏幕，
+                // 用户既看不见也点不到 —— 整个弹窗就废了。
+                // 标题与按钮保持固定，只让中间这段滚。
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    content()
+                }
                 Spacer(Modifier.height(10.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) {
